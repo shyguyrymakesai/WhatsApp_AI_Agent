@@ -21,6 +21,7 @@ load_dotenv()
 llm = ChatOllama(model = "qwen2.5")
 
 
+
 class BaseResponse(BaseModel):
     time: str
     main_message: str
@@ -39,7 +40,7 @@ class FinancialUpdateRepsonse(BaseModel):
 
 
 
-
+'''
 
 tools_lst = [
     SendWhatsappMsg,
@@ -83,3 +84,24 @@ try:
     print(structured_response)
 except Exception as e:
     print("Error parsing response", e, "Raw Response - ", raw_response)
+
+
+    '''
+
+# main.py
+
+from agent import Agent
+from tools.whatsapp_snd_tool import SendWhatsappMsg
+from tools.time_tool import GetTime
+
+# Initialize agent
+agent = Agent(tools=[SendWhatsappMsg, GetTime])
+
+# Simulate incoming message
+incoming_msg = input("📩 Incoming WhatsApp Message: ")
+
+# Agent thinks about it
+tool_name, tool_args = agent.think(incoming_msg)
+
+# Agent acts
+agent.act(tool_name, tool_args)
