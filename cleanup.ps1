@@ -1,10 +1,7 @@
-# cleanup.ps1
-# Script to delete heavy folders before git push
+Write-Host "Starting deluxe cleanup..."
 
-Write-Output "Starting cleanup..."
-
-# List of heavy folders to remove
-$folders = @(
+# Define folders to clean
+$foldersToDelete = @(
     "node_modules",
     "whatsapp-bot/node_modules",
     "whatsapp-bot/.local-chromium",
@@ -13,13 +10,33 @@ $folders = @(
     "venv"
 )
 
-foreach ($folder in $folders) {
+# Delete folders if they exist
+foreach ($folder in $foldersToDelete) {
     if (Test-Path $folder) {
-        Write-Output "Removing $folder..."
+        Write-Host "Removing $folder..."
         Remove-Item -Recurse -Force $folder
     } else {
-        Write-Output "$folder does not exist, skipping."
+        Write-Host "$folder does not exist, skipping."
     }
 }
 
-Write-Output "Done!"
+# Clean Git objects and garbage
+Write-Host "Cleaning git history..."
+git reflog expire --expire=now --all
+git gc --prune=now --aggressive
+
+# Stage and commit changes
+Write-Host "Adding and committing cleanup changes..."
+git add -A
+git commit -m "Automated cleanup before push" | Out-Null
+
+# Ask user if they want to force push
+$push = Read-Host "Do you want to force push to origin/main? (y/n)"
+if ($push -eq "y") {
+    Write-Host "Force pushing..."
+    git push origin main --force
+} else {
+    Write-Host "Skipping force push."
+}
+
+Write-Host "Deluxe cleanup complete!"

@@ -1,11 +1,13 @@
-# .gitignore
-node_modules/
-*.pyc
-__pycache__/
-*.log
-*.sqlite3
-venv/
+.wwebjs_auth/
+.wwebjs_cache/
 .local-chromium/
-*.pkl
-.DS_Store
-.env
+venv/
+*.exe
+*.dll
+
+# Ignore node stuff
+node_modules/
+whatsapp-bot/node_modules/
+whatsapp-bot/.local-chromium/
+whatsapp-bot/.wwebjs_auth/
+whatsapp-bot/.wwebjs_cache/

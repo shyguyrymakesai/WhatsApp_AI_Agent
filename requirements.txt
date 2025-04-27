@@ -6,3 +6,5 @@ langchain-anthropic
 langchain-ollama
 python-dotenv
 pydantic
+fastapi
+uvicorn
