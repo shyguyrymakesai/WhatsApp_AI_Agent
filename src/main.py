@@ -12,14 +12,12 @@ from langchain.tools import StructuredTool
 import requests
 import tools
 from tools.whatsapp_snd_tool import SendWhatsappMsg
-from tools.time_tool import GetTime 
-
+from tools.time_tool import GetTime
 
 
 load_dotenv()
 
-llm = ChatOllama(model = "qwen2.5")
-
+llm = ChatOllama(model="qwen2.5")
 
 
 class BaseResponse(BaseModel):
@@ -29,15 +27,13 @@ class BaseResponse(BaseModel):
     agentic_tools_used: list[str]
     delivery_status: str
 
-    #Misc (want to be optional)
+    # Misc (want to be optional)
 
 
 ## Fill out later
 class FinancialUpdateRepsonse(BaseModel):
     time: str
     bills_due: list[str]
-
-
 
 
 '''
