@@ -86,7 +86,7 @@ except Exception as e:
 
 # main.py
 
-from agent import Agent
+from src.agent.agent import Agent
 from tools.whatsapp_snd_tool import SendWhatsappMsg
 from tools.time_tool import GetTime
 

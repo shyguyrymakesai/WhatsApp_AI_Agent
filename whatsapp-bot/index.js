@@ -1,18 +1,38 @@
 const express = require('express');
 const qrcode = require('qrcode-terminal');
 const { Client, LocalAuth } = require('whatsapp-web.js');
+const axios = require('axios');
 
 const app = express();
 app.use(express.json());
 
+let isReady = false;
+
 const client = new Client({
     authStrategy: new LocalAuth(),
-    puppeteer: { headless: false } // set to false so you can debug the browser
+    puppeteer: { headless: false }
 });
 
 client.on('ready', () => {
     console.log('✅ WhatsApp client ready');
     isReady = true;
+});
+
+// 🚀 NEW: Listen to incoming WhatsApp messages
+client.on('message', async (msg) => {
+  try {
+    const payload = {
+      message: msg.body,
+      number: msg.from
+    };
+
+    console.log("📩 Forwarding message to agent:", payload);
+
+    await axios.post('http://localhost:8000/incoming', payload);
+
+  } catch (error) {
+    console.error("❌ Failed to forward to agent:", error.message);
+  }
 });
 
 client.initialize();

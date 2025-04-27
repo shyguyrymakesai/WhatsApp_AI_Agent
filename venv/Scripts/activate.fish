@@ -33,7 +33,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV 'C:\Users\Ryan\Desktop\AI_Agent_Tutorial\venv'
+set -gx VIRTUAL_ENV 'C:\Users\Ryan\Desktop\WhatsApp_AI_Agent\venv'
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/"Scripts $PATH

@@ -1,6 +1,6 @@
 # test_agent.py
 
-from agent import Agent
+from src.agent.agent import Agent
 from tools.whatsapp_snd_tool import SendWhatsappMsg
 
 # Initialize agent
