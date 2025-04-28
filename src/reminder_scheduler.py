@@ -1,7 +1,8 @@
+# reminder_scheduler.py
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 
 BOOKINGS_FILE = "data/bookings.json"
@@ -38,7 +39,9 @@ def check_and_send_reminders():
     for customer_id, data in bookings.items():
         if not data.get("reminder_sent"):
             try:
-                reminder_time = datetime.strptime(data["reminder_time"], "%A %I:%M %p")
+                reminder_time = datetime.strptime(
+                    data["reminder_time"], "%Y-%m-%d %I:%M %p"
+                )
             except Exception as e:
                 print(f"⚠️ Could not parse reminder time for {customer_id}: {e}")
                 continue

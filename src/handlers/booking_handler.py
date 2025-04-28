@@ -10,15 +10,77 @@ WORKING_HOURS_END = 17  # 5PM
 SLOT_INTERVAL_MINUTES = 60
 DAYS_AHEAD = 7
 
+# booking_handler.py
 
-def initialize_bookings_file():
-    os.makedirs(os.path.dirname(BOOKINGS_FILE), exist_ok=True)
+import json
+import os
+
+BOOKINGS_FILE = "bookings.json"
+
+
+def load_bookings():
+    """
+    Load bookings from file, or create an empty one if missing.
+    """
     if not os.path.exists(BOOKINGS_FILE):
         with open(BOOKINGS_FILE, "w") as f:
             json.dump({}, f)
-        print("📁 Created new bookings.json file")
-    else:
-        print("✅ Bookings file already exists")
+
+    with open(BOOKINGS_FILE, "r") as f:
+        return json.load(f)
+
+
+def save_bookings(bookings):
+    """
+    Save bookings back to the file.
+    """
+    with open(BOOKINGS_FILE, "w") as f:
+        json.dump(bookings, f, indent=4)
+
+
+def is_waiting_for_booking(user_number: str) -> bool:
+    """
+    Check if a user is currently expected to pick a booking option.
+    """
+    bookings = load_bookings()
+    return bookings.get(user_number, {}).get("waiting_for_booking", False)
+
+
+def set_waiting_for_booking(user_number: str, waiting: bool):
+    """
+    Update if user is waiting for a booking option.
+    """
+    bookings = load_bookings()
+    if user_number not in bookings:
+        bookings[user_number] = {}
+
+    bookings[user_number]["waiting_for_booking"] = waiting
+    save_bookings(bookings)
+
+
+def is_waiting_for_booking(user_number: str, bookings: dict) -> bool:
+    """
+    Checks if the user was recently shown booking options but hasn't picked yet.
+    """
+    return bookings.get(user_number, {}).get("awaiting_selection", False)
+
+
+def set_waiting_for_booking(user_number: str, bookings: dict, waiting: bool):
+    """
+    Update whether the user is expected to pick a booking slot.
+    """
+    if user_number not in bookings:
+        bookings[user_number] = {}
+    bookings[user_number]["awaiting_selection"] = waiting
+
+
+def initialize_bookings_file():
+    dir_name = os.path.dirname(BOOKINGS_FILE)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
+    if not os.path.exists(BOOKINGS_FILE):
+        with open(BOOKINGS_FILE, "w") as f:
+            f.write("[]")  # or whatever your default contents should be
 
 
 def detect_booking_intent(message):
@@ -26,9 +88,14 @@ def detect_booking_intent(message):
     return any(keyword in message.lower() for keyword in keywords)
 
 
-def detect_cancel_intent(message):
-    keywords = ["cancel", "reschedule", "change"]
-    return any(keyword in message.lower() for keyword in message.lower())
+def detect_cancel_intent(message: str) -> bool:
+    """
+    Only treat direct cancel words as cancel intent.
+    """
+    message = message.lower()
+    return any(
+        word in message for word in ["cancel", "delete", "remove", "cancellation"]
+    )
 
 
 def generate_upcoming_slots():
