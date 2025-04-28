@@ -1,103 +1,87 @@
-from typing import Optional
 from dotenv import load_dotenv
-from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnableSequence
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain.agents import create_tool_calling_agent, AgentExecutor
-from langchain.tools import Tool
-from langchain.tools import StructuredTool
-import requests
-import tools
 from tools.whatsapp_snd_tool import SendWhatsappMsg
 from tools.time_tool import GetTime
+from tools.booking_tool import BookingTool
+from typing import List
+from pydantic import BaseModel
+import tools
 
-
+# Load environment variables
 load_dotenv()
 
+# Initialize LLM
 llm = ChatOllama(model="qwen2.5")
 
+# Tools
+tools_lst = [SendWhatsappMsg, GetTime, BookingTool]
 
+
+# Structured output model
 class BaseResponse(BaseModel):
     time: str
     main_message: str
-    questions_for_user: list[str]
-    agentic_tools_used: list[str]
+    questions_for_user: List[str]
+    agentic_tools_used: List[str]
     delivery_status: str
 
-    # Misc (want to be optional)
 
-
-## Fill out later
-class FinancialUpdateRepsonse(BaseModel):
-    time: str
-    bills_due: list[str]
-
-
-'''
-
-tools_lst = [
-    SendWhatsappMsg,
-    GetTime
-    ]
-
+# Output parser
 parser = PydanticOutputParser(pydantic_object=BaseResponse)
 
+# Prompt
 prompt = ChatPromptTemplate.from_messages(
     [
         (
-            "system", 
-            """
-            You are an AI Agent that will be helping me test and improve the code for my AI Agent's in general and also yourself!
-            Please, answer/execute the user query and use necessary tools. 
-            Wrap the output in this format and provide no other text\n{format_instructions}
-            """,
+            (
+                "system",
+                """You are an AI Agent assisting customers on WhatsApp.
+
+RULES:
+- ALWAYS use the provided tools to respond.
+- ALWAYS use the real customer phone number passed to you. Never invent or guess numbers.
+- REPLY using tools even if the user asks casually, unless it is obvious spam.
+- NEVER respond directly without using a tool unless you are explicitly told.
+- NEVER output extra commentary. Only tool invocation or formatted JSON responses are allowed.
+
+TOOLS AVAILABLE:
+- SendWhatsappMsg (fields: number, message)
+- GetTime
+- BookingTool
+
+If unsure, it's better to attempt a tool than to stay silent.
+
+{format_instructions}
+""",
+            ),
         ),
-        ("placeholder", "{chat_history}"),
         ("human", "{query}"),
         ("placeholder", "{agent_scratchpad}"),
-
-
     ]
-).partial(format_instructions = parser.get_format_instructions())
+).partial(format_instructions=parser.get_format_instructions())
 
+# Create agent
 agent = create_tool_calling_agent(
-    llm = llm,
-    prompt = prompt,
-    tools = tools_lst
-) 
+    llm=llm,
+    prompt=prompt,
+    tools=tools_lst,
+)
 
+# Executor
+agent_executor = AgentExecutor(agent=agent, tools=tools_lst, verbose=True)
 
+# Example execution
+if __name__ == "__main__":
+    incoming_msg = input("📩 Incoming WhatsApp Message: ")
+    raw_response = agent_executor.invoke({"query": incoming_msg})
 
-agent_executor = AgentExecutor(agent = agent, tools = tools_lst, verbose= True)
-#msg format is [number : number, msg : msg]
-raw_response = agent_executor.invoke({"query": "Hey agent, please send thru whatsapp.  [number: 17655809531, msg: You are so sexy when you are interested, even if pretending, in things i like :)]. "})
-
-try:
-    structured_response = parser.parse(raw_response.get("output")[0]["text"])
-    print(structured_response)
-except Exception as e:
-    print("Error parsing response", e, "Raw Response - ", raw_response)
-
-
-    '''
-
-# main.py
-
-from src.agent.agent import Agent
-from tools.whatsapp_snd_tool import SendWhatsappMsg
-from tools.time_tool import GetTime
-
-# Initialize agent
-agent = Agent(tools=[SendWhatsappMsg, GetTime])
-
-# Simulate incoming message
-incoming_msg = input("📩 Incoming WhatsApp Message: ")
-
-# Agent thinks about it
-tool_name, tool_args = agent.think(incoming_msg)
-
-# Agent acts
-agent.act(tool_name, tool_args)
+    try:
+        structured_response = parser.parse(raw_response.get("output")[0]["text"])
+        print(structured_response)
+    except Exception as e:
+        print("Error parsing response:", e)
+        print("Raw Response:", raw_response)

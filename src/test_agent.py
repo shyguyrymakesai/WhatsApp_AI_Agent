@@ -2,9 +2,11 @@
 
 from src.agent.agent import Agent
 from tools.whatsapp_snd_tool import SendWhatsappMsg
+from tools import GetTime
+from tools import BookingTool
 
 # Initialize agent
-agent = Agent(tools=[SendWhatsappMsg])
+agent = Agent(tools=[SendWhatsappMsg, GetTime, BookingTool])
 
 # List of fake incoming WhatsApp messages to stress test the agent
 test_messages = [
