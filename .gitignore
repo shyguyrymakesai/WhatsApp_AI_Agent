@@ -11,3 +11,5 @@ whatsapp-bot/node_modules/
 whatsapp-bot/.local-chromium/
 whatsapp-bot/.wwebjs_auth/
 whatsapp-bot/.wwebjs_cache/
+# Ignore bookings data
+data/
