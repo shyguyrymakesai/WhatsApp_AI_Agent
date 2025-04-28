@@ -29,9 +29,6 @@ agent = Agent(tools=[SendWhatsappMsg])
 # Initialize bookings
 initialize_bookings_file()
 
-
-# --- Helper functions ---
-
 # receiver.py
 DAYS_OF_WEEK = [
     "monday",
@@ -42,6 +39,8 @@ DAYS_OF_WEEK = [
     "saturday",
     "sunday",
 ]
+
+# --- Helper functions ---
 
 
 def detect_day_request(message: str) -> str:
@@ -71,6 +70,21 @@ def is_valid_booking_option(message: str) -> bool:
     selection = int(message)
 
     return 1 <= selection <= max_option
+
+
+def parse_user_message(message: str) -> str:
+    """
+    Very simple rule-based intent parser for now.
+    """
+    lowered = message.lower()
+    if "remind me" in lowered or "reminder" in lowered:
+        return "reminder"
+    elif "book" in lowered or "meeting" in lowered:
+        return "booking"
+    elif "question" in lowered or "ask" in lowered:
+        return "question"
+    else:
+        return "unknown"
 
 
 # -------------------------

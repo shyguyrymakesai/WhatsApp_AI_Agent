@@ -1,6 +1,8 @@
 import os
 import json
 from datetime import datetime, timedelta
+from src.utils.whatsapp import send_whatsapp_message
+
 
 BOOKINGS_FILE = "data/bookings.json"
 
@@ -24,10 +26,18 @@ def load_bookings():
     """
     if not os.path.exists(BOOKINGS_FILE):
         with open(BOOKINGS_FILE, "w") as f:
-            json.dump({}, f)
+            f.write("{}")
 
     with open(BOOKINGS_FILE, "r") as f:
-        return json.load(f)
+        data = json.load(f)
+
+    # ⚡ SAFETY PATCH
+    if isinstance(data, list):
+        # If somehow a list is loaded, replace it with a dict
+        data = {}
+        save_bookings(data)
+
+    return data
 
 
 def save_bookings(bookings):
@@ -80,12 +90,25 @@ def initialize_bookings_file():
         os.makedirs(dir_name, exist_ok=True)
     if not os.path.exists(BOOKINGS_FILE):
         with open(BOOKINGS_FILE, "w") as f:
-            f.write("[]")  # or whatever your default contents should be
+            f.write("{}")  # or whatever your default contents should be
 
 
-def detect_booking_intent(message):
-    keywords = ["book", "appointment", "schedule"]
-    return any(keyword in message.lower() for keyword in keywords)
+def detect_booking_intent(message: str) -> bool:
+    """
+    Detect if the user is trying to book an appointment.
+    """
+    message = message.lower()
+    booking_keywords = [
+        "book",
+        "booking",
+        "appointment",
+        "schedule",
+        "reserve",
+        "meet",
+        "meeting",
+    ]
+
+    return any(keyword in message for keyword in booking_keywords)
 
 
 def detect_cancel_intent(message: str) -> bool:
@@ -170,9 +193,11 @@ def handle_booking_response(customer_id, message):
 
     save_booking(customer_id, selected_time)
 
-    return (
-        f"Awesome! You're booked for {selected_time}. We'll remind you 24 hours before!"
-    )
+    # 🔥 NEW: Send WhatsApp confirmation message
+    confirmation_message = f"✅ Awesome! You're booked for {selected_time}. We'll remind you 24 hours before!"
+    send_whatsapp_message(customer_id, confirmation_message)
+
+    return confirmation_message
 
 
 def cancel_booking(customer_id):
@@ -189,3 +214,38 @@ def cancel_booking(customer_id):
 
 def is_valid_booking_option(message):
     return message.isdigit() and 1 <= int(message) <= 3
+
+
+def handle_booking(phone_number: str, message: str):
+    """
+    Entry point for booking-related messages routed from the router.
+    Handles new booking intents, responses to offered slots, and cancellations.
+    """
+
+    bookings = load_bookings()
+
+    if detect_cancel_intent(message):
+        success = cancel_booking(phone_number)
+        if success:
+            send_whatsapp_message(phone_number, "✅ Your booking has been canceled!")
+        else:
+            send_whatsapp_message(
+                phone_number, "⚠️ You don't have any bookings to cancel."
+            )
+
+    elif is_waiting_for_booking(phone_number, bookings):
+        # User was already offered booking slots and is now picking one
+        response = handle_booking_response(phone_number, message)
+
+        # Mark user as no longer awaiting selection
+        set_waiting_for_booking(phone_number, bookings, False)
+        save_bookings(bookings)
+
+        send_whatsapp_message(phone_number, response)
+
+    else:
+        # It's a fresh booking intent
+        options = get_booking_options()
+        set_waiting_for_booking(phone_number, bookings, True)
+        save_bookings(bookings)
+        send_whatsapp_message(phone_number, options)
