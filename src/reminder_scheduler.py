@@ -19,7 +19,7 @@ import requests
 import dateparser  # lightweight natural‑language dt parser
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from utils.email import send_email  # thin SMTP helper
+from src.utils.email import send_email  # thin SMTP helper
 
 # -----------------------------------------------------------------------------
 # paths & constants

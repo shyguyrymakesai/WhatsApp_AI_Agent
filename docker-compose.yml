@@ -1,0 +1,25 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - sender
+
+  sender:
+    build:
+      context: ./whatsapp-bot
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - ./whatsapp-bot/.wwebjs_auth:/app/.wwebjs_auth
+      - ./whatsapp-bot/.wwebjs_cache:/app/.wwebjs_cache

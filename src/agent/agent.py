@@ -4,15 +4,15 @@ from pathlib import Path
 
 from ollama import Client
 
-from tools.whatsapp_snd_tool import SendWhatsappMsg
-from tools.booking_tool import BookingTool
-from tools.time_tool import GetTime
-from tools.check_booking_tool import CheckBookingTool
-from tools.check_availability_tool import CheckAvailabilityTool
+from src.tools.whatsapp_snd_tool import SendWhatsappMsg
+from src.tools.booking_tool import BookingTool
+from src.tools.time_tool import GetTime
+from src.tools.check_booking_tool import CheckBookingTool
+from src.tools.check_availability_tool import CheckAvailabilityTool
 
 
 class Agent:
-    """LLM-driven decision maker that routes user messages to tools."""
+    """LLM-driven decision maker that routes user messages to src.tools."""
 
     def __init__(self, tools=None):
         self.tools = tools or [
@@ -103,6 +103,18 @@ ONLY skip action if the message is clear spam.
             if tool.name.lower() == normalized:
                 print(f"🤖 Agent: Invoking tool {tool.name} with args {tool_args}")
                 result = tool.invoke(tool_args)
+
+                # 🔄 If the tool just returns a message, forward it to WhatsApp
+                if isinstance(result, str) and result.strip():
+                    SendWhatsappMsg.invoke(
+                        {
+                            "number": tool_args.get(
+                                "number", tool_args.get("user_number")
+                            ),
+                            "message": result.strip(),
+                        }
+                    )
+                    return result
 
                 # ----- Auto-relay Booking / Check responses -------------
                 if tool.name in {"BookingTool", "CheckBookingTool"} and isinstance(

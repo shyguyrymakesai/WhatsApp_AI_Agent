@@ -1,63 +1,104 @@
 # tools/check_availability_tool.py
+"""Check whether a specific appointment slot is available.
+
+The tool answers the agent with **one** of three tokens so the agent can
+react appropriately:
+
+* ``"available"`` – nobody has booked that slot yet.
+* ``"taken"`` – the slot is already occupied **and** no close alternative
+  was found.
+* ``"nearest::<alternative slot>"`` – the requested slot is taken, but the
+  next free 15‑minute slot (within the next four hours) is returned so the
+  agent can offer it.
+
+The function is wrapped as a LangChain ``StructuredTool`` so the agent can
+call it with JSON‑serialisable arguments.
+"""
+from __future__ import annotations
+
 from datetime import datetime, timedelta
+from typing import Optional
+
 from langchain.tools import StructuredTool
 from pydantic import BaseModel, Field
 
-from langchain.tools import StructuredTool
-from handlers.booking_handler import slot_taken
+from src.handlers.booking_handler import slot_taken  # ← uses shared booking store
 
-from handlers.booking_handler import slot_taken  # we already created this
+# ----------------------------------------------------------------------------
+# Pydantic schema – guarantees the agent passes the two required fields
+# ----------------------------------------------------------------------------
 
 
 class CheckAvailInput(BaseModel):
-    """Day and time the customer wants, e.g. 'Wednesday 3:30 PM'."""
+    """Input expected by ``CheckAvailabilityTool``."""
 
-    slot: str = Field(..., description="Desired day-time string")
-    user_number: str
-
-
-def _round_to_quarter(dt: datetime) -> datetime:
-    minute = dt.minute
-    qtr = (minute + 7) // 15 * 15
-    if qtr == 60:
-        dt += timedelta(hours=1)
-        qtr = 0
-    return dt.replace(minute=qtr, second=0, microsecond=0)
+    slot: str = Field(
+        ...,
+        description="Desired day‑time string, e.g. 'Wednesday 3:30 PM'",
+    )
+    user_number: str = Field(
+        ..., description="Caller phone number (for self‑exclusion)"
+    )
 
 
-def find_next_free_slot(start_slot: str, *, max_checks: int = 16) -> str | None:
-    """Return the nearest later 15-min slot that’s free, or None."""
-    dt = datetime.strptime(start_slot, "%A %I:%M %p")
+# ----------------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------------
+
+
+def _nearest_free_slot(start: datetime, *, max_checks: int = 16) -> Optional[str]:
+    """Return the first un‑taken 15‑min slot *after* ``start``.
+
+    *Checks up to ``max_checks``* intervals (default ≈ 4 hours). ``None`` if
+    everything is occupied.
+    """
+    step = timedelta(minutes=15)
+    dt = start
     for _ in range(max_checks):
-        dt += timedelta(minutes=15)
-        next_slot = dt.strftime("%A %-I:%M %p")
-        if not slot_taken(next_slot):
-            return next_slot
+        dt += step
+        candidate = dt.strftime("%A %-I:%M %p")
+        if not slot_taken(candidate):
+            return candidate
     return None
 
 
+# ----------------------------------------------------------------------------
+# Core tool function
+# ----------------------------------------------------------------------------
+
+
 def check_availability(slot: str, user_number: str) -> str:
+    """Check whether *slot* is free.
+
+    The caller (agent) *may* be the same user who already holds the slot, so
+    we exclude ``user_number`` when checking collisions.
     """
-    Return 'taken' if the slot is already booked by someone else,
-    otherwise 'free'. The agent can then decide to book it or offer
-    alternatives.
-    """
-    return "taken" if slot_taken(slot, exclude_user=user_number) else "free"
+    # Normalise – allow things like "3:30 pm Wednesday" (robustness helper)
+    try:
+        dt_req = datetime.strptime(slot, "%A %I:%M %p")
+    except ValueError:
+        # Agent passed something odd – fail closed
+        return "taken"
+
+    # 1️⃣ Direct hit
+    if not slot_taken(slot, exclude_user=user_number):
+        return "available"
+
+    # 2️⃣ Suggest the next nearest free slot (within ~4 hours)
+    alt = _nearest_free_slot(dt_req)
+    return f"nearest::{alt}" if alt else "taken"
 
 
-CheckAvailabilityTool = StructuredTool.from_function(
-    func=check_availability,
-    name="CheckAvailabilityTool",
-    description="Checks if a proposed time slot is free or already booked. "
-    "Returns 'free' or 'taken'.",
-)
+# ----------------------------------------------------------------------------
+# LangChain wrapper
+# ----------------------------------------------------------------------------
 
 CheckAvailabilityTool = StructuredTool.from_function(
     func=check_availability,
     name="CheckAvailabilityTool",
     args_schema=CheckAvailInput,
     description=(
-        "Check whether a specific appointment slot is free. "
-        "Returns one of: 'available', 'taken', or 'nearest::<alternative slot>'."
+        "Report whether a given appointment slot is available. "
+        "Returns one of: 'available', 'taken', or 'nearest::<alternative>'."
     ),
 )

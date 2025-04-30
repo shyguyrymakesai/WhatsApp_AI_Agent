@@ -48,3 +48,8 @@ data/*.tmp
 data/bookings.json
 data/user_memory.json
 data/waitlist.json
+
+.wwebjs_cache
+.wwebjs_auth
+data
+.env

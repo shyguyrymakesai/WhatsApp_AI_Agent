@@ -25,20 +25,22 @@ try {
 let isReady = false;
 
 const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        headless: false,
-        executablePath: puppeteer.executablePath(),
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-extensions',
-            '--disable-gpu'
-        ]
-    }
+  authStrategy: new LocalAuth(),
+  puppeteer: {
+    headless: false,               // or `true` if you don’t need to actually watch it
+    executablePath: puppeteer.executablePath(),
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-extensions',
+      '--disable-gpu',
+      '--dns-prefetch-disable',        // ← ADD THIS
+      '--disable-features=NetworkService,NetworkServiceInProcess',
+      '--disable-web-security'
+    ]
+  }
 });
-
 // ------------------ NodeJS Crash Handlers ------------------
 process.on('uncaughtException', (err) => {
     console.error('❌ Uncaught Exception:', err);

@@ -5,7 +5,7 @@ from datetime import timedelta, datetime
 import dateparser
 from langchain.tools import StructuredTool
 
-from handlers.booking_handler import (
+from src.handlers.booking_handler import (
     get_booking_options,
     save_individual_booking,
     slot_taken,  # new helper we added earlier

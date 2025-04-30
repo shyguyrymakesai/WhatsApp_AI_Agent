@@ -1,3 +1,4 @@
+# src/tools/whatsapp_snd_tool.py
 from langchain.tools import StructuredTool
 import requests
 from pydantic import BaseModel
@@ -10,27 +11,23 @@ class WhatsAppInput(BaseModel):
 
 
 def send_whatsapp_message(number: str, message: str):
-    print(
-        "📤 Attempting to send WhatsApp message with payload:",
-        {"number": number, "message": message},
-    )
+    """
+    Send a WhatsApp message via the local Node.js sender.
+    On failure, log the error but do not raise, to keep the FastAPI server running.
+    """
+    payload = {"number": number, "message": message}
+    print("📤 Attempting to send WhatsApp message with payload:", payload)
 
     try:
-        response = requests.post(
-            "http://localhost:3000/send", json={"number": number, "message": message}
-        )
+        response = requests.post("http://localhost:3000/send", json=payload, timeout=5)
         response.raise_for_status()
         print("✅ Message sent successfully!")
     except requests.exceptions.RequestException as e:
         print("❌ Failed to send WhatsApp message:", e)
-        if "response" in locals() and response is not None:
-            print("❌ Full response from Node:", response.text)
-        else:
-            print("❌ No response received.")
-        raise e
+        # swallow exception to avoid crashing the webhook
+    # No exception is raised, tool returns None
 
 
-# ⭐ THIS IS WHAT YOU NEED ⭐
 SendWhatsappMsg = StructuredTool.from_function(
     func=send_whatsapp_message,
     name="SendWhatsappMsg",

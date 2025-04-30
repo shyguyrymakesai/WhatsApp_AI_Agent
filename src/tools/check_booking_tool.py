@@ -1,6 +1,6 @@
 from langchain.tools import StructuredTool
 from pydantic import BaseModel
-from handlers.booking_handler import get_user_booking
+from src.handlers.booking_handler import get_user_booking
 
 
 class CheckBookingInput(BaseModel):

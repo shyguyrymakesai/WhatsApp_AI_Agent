@@ -1,4 +1,4 @@
-from utils.whatsapp import send_whatsapp_message
+from src.utils.whatsapp import send_whatsapp_message
 
 
 def handle_reminder(phone_number: str, message: str):

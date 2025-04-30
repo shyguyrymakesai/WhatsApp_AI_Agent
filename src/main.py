@@ -4,9 +4,9 @@ from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain.agents import create_tool_calling_agent, AgentExecutor
-from tools.whatsapp_snd_tool import SendWhatsappMsg
-from tools.time_tool import GetTime
-from tools.booking_tool import BookingTool
+from src.tools.whatsapp_snd_tool import SendWhatsappMsg
+from src.tools.time_tool import GetTime
+from src.tools.booking_tool import BookingTool
 from typing import List
 from pydantic import BaseModel
 import tools
