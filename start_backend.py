@@ -34,7 +34,8 @@ install_requirements()
 def start_receiver():
     import uvicorn
 
-    uvicorn.run("receiver:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.environ.get("FASTAPI_PORT", 8001))  # fallback to 8001 if not set
+    uvicorn.run("src.receiver:app", host="0.0.0.0", port=port, reload=True)
 
 
 def start_reminder_scheduler():

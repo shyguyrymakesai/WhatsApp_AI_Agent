@@ -4,13 +4,20 @@ import random
 import re
 from datetime import datetime, timedelta
 from src.utils.whatsapp import send_whatsapp_message
+import tempfile, shutil
 
-BOOKINGS_FILE = "data/bookings.json"
+
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parents[2]  # adjust depth if needed
+BOOKINGS_FILE = BASE_DIR / "data" / "bookings.json"
+BOOKINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+
 
 # Configuration
 WORKING_HOURS_START = 9  # 9AM
 WORKING_HOURS_END = 17  # 5PM
-SLOT_INTERVAL_MINUTES = 60
+SLOT_INTERVAL_MINUTES = 15
 DAYS_AHEAD = 7
 
 
@@ -20,7 +27,11 @@ def load_bookings():
         with open(BOOKINGS_FILE, "w") as f:
             json.dump({}, f)
     with open(BOOKINGS_FILE, "r") as f:
-        data = json.load(f)
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            data = {}
+            save_all_bookings(data)
     if isinstance(data, list):
         data = {}
         save_all_bookings(data)
@@ -28,16 +39,49 @@ def load_bookings():
 
 
 def save_all_bookings(bookings: dict):
-    with open(BOOKINGS_FILE, "w") as f:
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=BOOKINGS_FILE.parent, suffix=".tmp")
+    with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
         json.dump(bookings, f, indent=4)
+        f.flush()
+        os.fsync(f.fileno())  # guarantee bytes hit disk
+    shutil.move(tmp_path, BOOKINGS_FILE)
 
 
-def save_individual_booking(customer_id: str, selected_time: str):
+# ---- REPLACE the old save_individual_booking with this ----------
+
+
+# ---- NEW helper (add near the other helpers) --------------------
+def slot_taken(slot: str, exclude_user: str | None = None) -> bool:
+    """Return True if any *other* user already booked `slot`."""
+    return any(
+        uid != exclude_user and info.get("time") == slot
+        for uid, info in load_bookings().items()
+    )
+
+
+def save_individual_booking(
+    user_number: str,
+    slot: str,
+    email: str | None = None,  # ← add default
+) -> None:
+    """
+    Persist a booking unless the slot is already taken.
+
+    Raises
+    ------
+    ValueError
+        If the desired slot is occupied by another user.
+    """
+    if slot_taken(slot, exclude_user=user_number):
+        raise ValueError("Slot already booked")
+
     bookings = load_bookings()
-    bookings[customer_id] = {
-        "customer_id": customer_id,
-        "time": selected_time,
-        "reminder_sent": False,
+    bookings[user_number] = {
+        "time": slot,
+        "email": email or bookings.get(user_number, {}).get("email"),  # keep old
+        "awaiting_selection": False,
+        "reminder_sent_sms": False,
+        "reminder_sent_email": False,
     }
     save_all_bookings(bookings)
 
@@ -78,52 +122,71 @@ def generate_upcoming_slots():
     return slots
 
 
-def get_booking_options(desired_day: str = "", raw: bool = False) -> list[str] | str:
-    """
-    Get booking slots. If raw=True: return slot list. Else return formatted message.
-    """
-    all_slots = [
-        ("monday", "11:00 AM"),
-        ("monday", "12:00 PM"),
-        ("monday", "1:00 PM"),
-        ("tuesday", "9:00 AM"),
-        ("tuesday", "10:00 AM"),
-        ("tuesday", "11:00 AM"),
-        ("wednesday", "9:00 AM"),
-        ("wednesday", "10:00 AM"),
-        ("thursday", "9:00 AM"),
-        ("thursday", "10:00 AM"),
-        ("friday", "9:00 AM"),
-        ("friday", "10:00 AM"),
-        ("saturday", "9:00 AM"),
-        ("saturday", "10:00 AM"),
-        ("saturday", "11:00 AM"),
-        ("sunday", "1:00 PM"),
-        ("sunday", "2:00 PM"),
+def get_user_booking(customer_id: str) -> str | None:
+    bookings = load_bookings()
+    booking = bookings.get(customer_id)
+    if booking and "time" in booking:
+        return booking["time"]
+    return None
+
+
+def _quarter_hour_range(start_h, end_h):
+    for h in range(start_h, end_h):
+        for m in (0, 15, 30, 45):
+            yield h, m
+
+
+import random
+
+
+# helper used earlier
+def _quarter_hour_range(start_h, end_h):
+    for h in range(start_h, end_h):
+        for m in (0, 15, 30, 45):
+            yield h, m
+
+
+def get_booking_options(desired_day: str = "", raw: bool = False, limit: int = 5):
+    """Return a list of slots or a pretty menu message."""
+    weekdays = [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
     ]
 
+    # Build every 15-minute slot in working hours
+    all_slots = [
+        (day, f"{hour%12 or 12}:{minute:02d} {'AM' if hour < 12 else 'PM'}")
+        for day in weekdays
+        for hour, minute in _quarter_hour_range(WORKING_HOURS_START, WORKING_HOURS_END)
+    ]
+
+    # Filter by requested day (if any)
     if desired_day:
         filtered = [
-            f"{day.title()} {time}"
-            for day, time in all_slots
-            if desired_day.lower() in day.lower()
+            f"{d.title()} {t}" for d, t in all_slots if desired_day.lower() in d.lower()
         ]
     else:
-        filtered = [f"{day.title()} {time}" for day, time in all_slots]
+        filtered = [f"{d.title()} {t}" for d, t in all_slots]
 
+    # No matches → return safe empty value
     if not filtered:
-        return "⚠️ No available slots for the day you requested." if not raw else []
+        return [] if raw else "⚠️ No available slots for the day you requested."
 
     random.shuffle(filtered)
-    limited = filtered[:5]
+    limited = filtered[:limit]
 
     if raw:
         return limited
 
-    message = "🔎 Available times:\n"
-    for idx, slot in enumerate(limited, start=1):
-        message += f"{idx}. {slot}\n"
-    return message.strip()
+    message = "🔎 Available times:\n" + "\n".join(
+        f"{idx+1}. {slot}" for idx, slot in enumerate(limited)
+    )
+    return message
 
 
 def is_waiting_for_booking(user_number: str, bookings: dict) -> bool:
