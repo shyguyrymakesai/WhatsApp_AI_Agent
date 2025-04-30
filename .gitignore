@@ -1,15 +1,50 @@
-.wwebjs_auth/
-.wwebjs_cache/
-.local-chromium/
-venv/
-*.exe
-*.dll
+# ────────── Python
+__pycache__/
+*.py[cod]
+*.so
+*.sqlite3
+*.pyo
+*.log
+*.pot
+*.mo
+*.pyd
+*.egg-info/
+dist/              # build artifacts
+build/
+.venv/             # or venv/ ; whatever you called it
+*.tgz
 
-# Ignore node stuff
+# ────────── Node / WhatsApp bot
 node_modules/
-whatsapp-bot/node_modules/
-whatsapp-bot/.local-chromium/
-whatsapp-bot/.wwebjs_auth/
-whatsapp-bot/.wwebjs_cache/
-# Ignore bookings data
-data/
+npm-debug.log*
+yarn.lock
+pnpm-lock.yaml
+yarn-debug.log*
+yarn-error.log*
+
+# ────────── IDE / OS cruft
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+*~
+
+# ────────── Runtime state
+data/bookings.json          # live bookings
+fastapi_port.txt
+*.log
+.cache/
+*.tmp
+data/*.tmp
+
+
+# ────────── Secrets
+.env                         # environment variables
+
+# ────────── Front-end bundles / maps
+*.map
+
+data/bookings.json
+data/user_memory.json
+data/waitlist.json
