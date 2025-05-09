@@ -1,12 +1,20 @@
 # src/receiver.py
-import re
+"""
+WhatsApp FastAPI webhook with intent routing, booking,
+natural-language slots, reminders, and LLM fallback
+"""
 import os
+import re
 import socket
 import sys
-
 from fastapi import FastAPI, Request
-from handlers.intent_classifier import classify_intent, Intent
-from handlers.booking_handler import (
+import uvicorn
+
+# allow imports from project root
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from src.handlers.intent_classifier import classify_intent, Intent
+from src.handlers.booking_handler import (
     initialize_bookings_file,
     load_bookings,
     save_all_bookings,
@@ -14,141 +22,252 @@ from handlers.booking_handler import (
     set_waiting_for_booking,
     get_booking_options,
     get_user_booking,
+    cancel_booking,
     save_individual_booking,
     slot_taken,
 )
-from handlers.day_detector import detect_day_request
-from handlers.slot_picker import pick_slot_from_reply
-
-from routers.email_router import handle_email
-from routers.lookup_cancel_router import handle_cancel, handle_lookup
-from routers.booking_router import handle_booking
-from routers.fallback_router import handle_fallback
-
-from tools.whatsapp_rcv_tool import receive_whatsapp_message
+from src.handlers.day_detector import detect_day_request
 from tools.whatsapp_snd_tool import SendWhatsappMsg
-from tools.time_tool import GetTime
+from src.agent.agent import Agent
 from reminder_scheduler import start_scheduler
-from memory.memory_client import get_user_memory, save_user_memory
+from tools.booking_tool import BookingTool
+from utils.slot_parser import parse_slot
 
 app = FastAPI()
+
+# start the 60s reminder scheduler
 start_scheduler(app)
+# ensure bookings file exists
 initialize_bookings_file()
 
 
+@app.get("/ping")
+async def ping():
+    return {"status": "ok"}
+
+
 @app.post("/incoming")
-async def orchestrate(request: Request):
+async def incoming(request: Request):
     payload = await request.json()
-    extracted = receive_whatsapp_message(payload)
-    if "error" in extracted:
-        return {"status": "error", "details": extracted["error"]}
-
-    user = extracted["user_number"]
-    msg = extracted["user_message"].strip()
+    user_number = payload.get("number", "")
+    user_message = payload.get("message", "").strip()
     bookings = load_bookings()
-    memory = get_user_memory(user)
 
-    # 1) Email-collection flow has top priority
-    if bookings.get(user, {}).get("awaiting_email"):
-        return await handle_email({"user_number": user, "user_message": msg})
+    # 1️⃣ Awaiting email flow
+    if bookings.get(user_number, {}).get("awaiting_email"):
+        text = user_message.lower()
+        if "skip" in text:
+            bookings[user_number]["awaiting_email"] = False
+            save_all_bookings(bookings)
+            SendWhatsappMsg.invoke(
+                {
+                    "number": user_number,
+                    "message": "👍 No problem – WhatsApp reminders only.",
+                }
+            )
+            return {"status": "email skipped"}
+        if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", user_message):
+            bookings[user_number]["email"] = user_message
+            bookings[user_number]["awaiting_email"] = False
+            save_all_bookings(bookings)
+            SendWhatsappMsg.invoke(
+                {
+                    "number": user_number,
+                    "message": "✅ Great! I’ll email reminders too.",
+                }
+            )
+            return {"status": "email saved"}
+        SendWhatsappMsg.invoke(
+            {
+                "number": user_number,
+                "message": "⚠️ That doesn’t look like an email. Send a valid address or say 'skip'.",
+            }
+        )
+        return {"status": "awaiting valid email"}
 
-    # 2) Intent classification
-    intent = classify_intent(msg)
+    # classify intent and slot
+    intent = classify_intent(user_message)
+    natural = parse_slot(user_message)
+    digit_sel = bool(re.fullmatch(r"[1-5]", user_message))
 
-    # 3) Cancel or Lookup
-    if intent is Intent.CANCEL_APPT:
-        return await handle_cancel({"user_number": user})
-    if intent is Intent.LOOKUP_APPT:
-        return await handle_lookup({"user_number": user})
-
-    # 4) Reschedule => cancel + fallthrough to BOOK_APPT
+    # 2️⃣ Reschedule
     if intent is Intent.RESCHEDULE_APPT:
-        if get_user_booking(user):
-            await handle_cancel({"user_number": user})
+        current = get_user_booking(user_number)
+        if current:
+            cancel_booking(user_number)
+            SendWhatsappMsg.invoke(
+                {
+                    "number": user_number,
+                    "message": f"🔄 Your previous appointment at {current} has been canceled. Let's pick a new time!",
+                }
+            )
             intent = Intent.BOOK_APPT
         else:
             SendWhatsappMsg.invoke(
                 {
-                    "number": user,
-                    "message": "😔 I don’t see an existing appointment to reschedule.",
+                    "number": user_number,
+                    "message": "😔 I don’t see an appointment to reschedule.",
                 }
             )
             return {"status": "no booking to reschedule"}
 
-    # 5) Mid-booking flow: check for natural slot or delegate
-    if is_waiting_for_booking(user, bookings):
-        from tools.booking_tool import _parse_natural_slot
+    # 3️⃣ Clear stale waiting flag
+    if is_waiting_for_booking(user_number, bookings) and not (
+        natural or digit_sel or intent in {Intent.CHECK_DAY, Intent.BOOK_APPT}
+    ):
+        set_waiting_for_booking(user_number, bookings, False)
+        save_all_bookings(bookings)
 
-        natural = _parse_natural_slot(msg)
-        if natural:
-            if slot_taken(natural, exclude_user=user):
-                SendWhatsappMsg.invoke(
-                    {
-                        "number": user,
-                        "message": "⚠️ Sorry, that time was just booked. Please choose another slot.",
-                    }
-                )
-                return {"status": "collision"}
+    # 4️⃣ Cancel appointment
+    if intent is Intent.CANCEL_APPT:
+        ok = cancel_booking(user_number)
+        msg = (
+            "✅ Your appointment has been canceled."
+            if ok
+            else "⚠️ You don’t have any appointment to cancel."
+        )
+        SendWhatsappMsg.invoke({"number": user_number, "message": msg})
+        return {"status": "cancel"}
 
-            save_individual_booking(user, natural)
+    # 5️⃣ Lookup appointment
+    if intent is Intent.LOOKUP_APPT:
+        slot = get_user_booking(user_number)
+        msg = (
+            f"📅 You are booked for {slot}!"
+            if slot
+            else "😔 I couldn’t find an active booking for you."
+        )
+        SendWhatsappMsg.invoke({"number": user_number, "message": msg})
+        return {"status": "lookup"}
+
+    # 6️⃣ Natural-language booking
+    if intent is Intent.BOOK_APPT and natural:
+        if slot_taken(natural, bookings, exclude_user=user_number):
             SendWhatsappMsg.invoke(
                 {
-                    "number": user,
-                    "message": f"✅ You're booked for {natural}! We'll remind you 24 h before.",
+                    "number": user_number,
+                    "message": "⚠️ Sorry, that time was just booked. Please choose another slot.",
                 }
             )
-            set_waiting_for_booking(user, bookings, False)
-            b = load_bookings()
-            if not b[user].get("email"):
-                SendWhatsappMsg.invoke(
-                    {
-                        "number": user,
-                        "message": "📧 Got an email address? Just reply with it, or say 'skip'.",
-                    }
-                )
-                b[user]["awaiting_email"] = True
-                save_all_bookings(b)
-                return {"status": "ask_email"}
-            save_all_bookings(bookings)
-            return {"status": "confirmed"}
+            return {"status": "slot collision"}
+        save_individual_booking(user_number, natural)
+        set_waiting_for_booking(user_number, bookings, False)
+        save_all_bookings(bookings)
+        SendWhatsappMsg.invoke(
+            {
+                "number": user_number,
+                "message": f"✅ You're booked for {natural}! We'll remind you 24 h before.",
+            }
+        )
+        # prompt email
+        b = load_bookings()
+        if not b[user_number].get("email"):
+            b[user_number]["awaiting_email"] = True
+            save_all_bookings(b)
+            SendWhatsappMsg.invoke(
+                {
+                    "number": user_number,
+                    "message": "📧 Got an email address? Reply or say 'skip'.",
+                }
+            )
+            return {"status": "ask email"}
+        return {"status": "booked natural"}
 
-        # No natural slot, delegate to booking router
-        return await handle_booking({"user_number": user, "user_message": msg})
+    # 7️⃣ Mid-booking override
+    if is_waiting_for_booking(user_number, bookings) and natural:
+        if slot_taken(natural, bookings, exclude_user=user_number):
+            SendWhatsappMsg.invoke(
+                {
+                    "number": user_number,
+                    "message": "⚠️ Sorry, that time was just booked. Please choose another slot.",
+                }
+            )
+            return {"status": "slot collision"}
+        save_individual_booking(user_number, natural)
+        set_waiting_for_booking(user_number, bookings, False)
+        save_all_bookings(bookings)
+        SendWhatsappMsg.invoke(
+            {
+                "number": user_number,
+                "message": f"✅ You're booked for {natural}! We'll remind you 24 h before.",
+            }
+        )
+        b = load_bookings()
+        if not b[user_number].get("email"):
+            b[user_number]["awaiting_email"] = True
+            save_all_bookings(b)
+            SendWhatsappMsg.invoke(
+                {
+                    "number": user_number,
+                    "message": "📧 Got an email address? Reply or say 'skip'.",
+                }
+            )
+            return {"status": "ask email"}
+        return {"status": "confirmed"}
 
-    # 6) First-touch BOOK_APPT
+    # 8️⃣ BookingTool fallback
     if intent is Intent.BOOK_APPT:
-        nat_try = await handle_booking({"user_number": user, "user_message": msg})
-        if nat_try.get("status") in ("booked", "collision"):
-            return nat_try
-        # fall through to menu
+        result = BookingTool.run({"number": user_number, "user_message": user_message})
+        if result.startswith("booked::"):
+            slot = result.split("::", 1)[1]
+            SendWhatsappMsg.invoke(
+                {
+                    "number": user_number,
+                    "message": f"✅ You're booked for {slot}! We'll remind you 24 h before.",
+                }
+            )
+            return {"status": "booked"}
+        if result == "slot_taken":
+            SendWhatsappMsg.invoke(
+                {
+                    "number": user_number,
+                    "message": "⚠️ Sorry, that time was just booked. Please choose another slot.",
+                }
+            )
+            return {"status": "slot collision"}
 
-    # 7) Show menu for BOOK_APPT or CHECK_DAY
-    if intent in (Intent.BOOK_APPT, Intent.CHECK_DAY):
-        day = detect_day_request(msg) if intent is Intent.CHECK_DAY else None
-        slots = get_booking_options(desired_day=day, raw=True)[:5]
+    # 9️⃣ Show menu
+    if intent in {Intent.BOOK_APPT, Intent.CHECK_DAY}:
+        day = detect_day_request(user_message) if intent is Intent.CHECK_DAY else None
+        slots = get_booking_options(desired_day=day or "", raw=True)
         if not slots:
             SendWhatsappMsg.invoke(
-                {"number": user, "message": "⚠️ No available slots for that day."}
+                {"number": user_number, "message": "⚠️ No available slots right now."}
             )
             return {"status": "no slots"}
-
-        from collections import defaultdict
-
-        user_shown = defaultdict(list)
-        user_shown[user] = slots
-        set_waiting_for_booking(user, bookings, True)
+        top5 = slots[:5]
+        set_waiting_for_booking(user_number, bookings, True)
         save_all_bookings(bookings)
-        menu = "🔎 Available times:\n" + "\n".join(
-            f"{i+1}. {s}" for i, s in enumerate(slots)
+        menu = "\n".join(f"{i+1}. {s}" for i, s in enumerate(top5))
+        SendWhatsappMsg.invoke(
+            {"number": user_number, "message": f"🔎 Available times:\n{menu}"}
         )
-        SendWhatsappMsg.invoke({"number": user, "message": menu})
-        return {"status": "show_menu"}
+        return {"status": "menu shown"}
 
-    # 8) Fallback to LLM
-    return await handle_fallback({"user_number": user, "user_message": msg})
+    # 🔟 LLM fallback with memory
+    agent = Agent(user_id=user_number)
+    tool, args = agent.think_llm(user_message)
+    args.setdefault("number", user_number)
+    args.setdefault("user_number", user_number)
+    response = agent.act(tool, args, user_message)
+    return {"status": "agent", "tool": tool, "args": args, "response": response}
+
+
+def find_open_port(start: int = 8001) -> int:
+    """Find an available port to avoid collisions."""
+    for port in range(start, start + 20):
+        with socket.socket() as s:
+            try:
+                s.bind(("", port))
+                return port
+            except OSError:
+                continue
+    raise RuntimeError("No available port found")
 
 
 if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run("src.receiver:app", host="0.0.0.0", port=8001, reload=True)
+    port = find_open_port()
+    with open("fastapi_port.txt", "w") as f:
+        f.write(str(port))
+    print(f"🚀 FastAPI server starting on port {port}")
+    uvicorn.run("src.receiver:app", host="0.0.0.0", port=port, reload=True)

@@ -1,0 +1,15 @@
+artifact_uri: file:///C:/Users/Ryan/Desktop/WhatsApp_AI_Agent/mlruns/526005919605776416/7450d0fd05f646959fd19dc506d15edf/artifacts
+end_time: 1746805058890
+entry_point_name: ''
+experiment_id: '526005919605776416'
+lifecycle_stage: active
+run_id: 7450d0fd05f646959fd19dc506d15edf
+run_name: What's the status of my booking?
+run_uuid: 7450d0fd05f646959fd19dc506d15edf
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1746805054740
+status: 4
+tags: []
+user_id: Ryan

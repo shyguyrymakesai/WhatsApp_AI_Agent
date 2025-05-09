@@ -1,23 +1,34 @@
-# src/memory/memory_client.py
+# File: src/memory/memory_client.py
 import requests
 
 MCP_BASE_URL = "http://localhost:9000"
 
 
 def get_user_memory(user_id: str) -> dict:
-    response = requests.get(f"{MCP_BASE_URL}/memory/{user_id}")
-    if response.status_code == 200:
-        return response.json()
-    return {}
+    try:
+        resp = requests.get(f"{MCP_BASE_URL}/memory/{user_id}")
+        resp.raise_for_status()
+        return resp.json()
+    except requests.RequestException:
+        return {}
 
 
-def save_user_memory(user_id: str, memory: dict):
-    response = requests.post(
-        f"{MCP_BASE_URL}/memory/{user_id}", json={"memory": memory}
-    )
-    return response.json()
+def save_user_memory(user_id: str, memory: dict) -> dict:
+    try:
+        resp = requests.post(
+            f"{MCP_BASE_URL}/memory/{user_id}",
+            json={"memory": memory},
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except requests.RequestException as e:
+        return {"error": str(e)}
 
 
-def delete_user_memory(user_id: str):
-    response = requests.delete(f"{MCP_BASE_URL}/memory/{user_id}")
-    return response.json()
+def delete_user_memory(user_id: str) -> dict:
+    try:
+        resp = requests.delete(f"{MCP_BASE_URL}/memory/{user_id}")
+        resp.raise_for_status()
+        return resp.json()
+    except requests.RequestException as e:
+        return {"error": str(e)}

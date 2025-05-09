@@ -22,7 +22,10 @@ from typing import Optional
 from langchain.tools import StructuredTool
 from pydantic import BaseModel, Field
 
-from src.handlers.booking_handler import slot_taken  # ← uses shared booking store
+from src.handlers.booking_handler import (
+    slot_taken,
+    load_bookings,
+)  # ← uses shared booking store
 
 # ----------------------------------------------------------------------------
 # Pydantic schema – guarantees the agent passes the two required fields
@@ -30,7 +33,16 @@ from src.handlers.booking_handler import slot_taken  # ← uses shared booking s
 
 
 class CheckAvailInput(BaseModel):
-    """Input expected by ``CheckAvailabilityTool``."""
+    """Input expected by ``def _parse_natural_slot(text: str) -> str | None:
+    # 1) fold shorthand → canonical tokens
+    text = re.sub(r"\btmr?w?\b", "tomorrow", text, flags=re.I)
+    text = re.sub(r"\btom\b",   "tomorrow", text, flags=re.I)
+    text = re.sub(r"\btd\b",    "today",    text, flags=re.I)
+    text = re.sub(r"\btonite\b","tonight",  text, flags=re.I)
+    text = re.sub(r"\bmidnight\b|\b12\s*am\b|\b0000\b", "midnight", text, flags=re.I)
+    text = re.sub(r"\bnoon\b|\b12\s*pm\b|\b1200\b|\bmidday\b",      "noon",     text, flags=re.I)
+    text = re.sub(r"\b(nxt|upcoming)\s+week\b|\bweek\s+ahead\b",     "next week",text, flags=re.I)CheckAvailabilityTool``.
+    """
 
     slot: str = Field(
         ...,
@@ -73,6 +85,9 @@ def check_availability(slot: str, user_number: str) -> str:
     The caller (agent) *may* be the same user who already holds the slot, so
     we exclude ``user_number`` when checking collisions.
     """
+    # load the current bookings
+    bookings = load_bookings()
+
     # Normalise – allow things like "3:30 pm Wednesday" (robustness helper)
     try:
         dt_req = datetime.strptime(slot, "%A %I:%M %p")
@@ -81,12 +96,15 @@ def check_availability(slot: str, user_number: str) -> str:
         return "taken"
 
     # 1️⃣ Direct hit
-    if not slot_taken(slot, exclude_user=user_number):
+    if not slot_taken(slot, bookings, exclude_user=user_number):
         return "available"
 
-    # 2️⃣ Suggest the next nearest free slot (within ~4 hours)
+    # 2️⃣ Suggest the next nearest free slot (within ~4 hours)
     alt = _nearest_free_slot(dt_req)
-    return f"nearest::{alt}" if alt else "taken"
+    # check that the suggested alt is actually free in our bookings
+    if alt and not slot_taken(alt, bookings):
+        return f"nearest::{alt}"
+    return "taken"
 
 
 # ----------------------------------------------------------------------------

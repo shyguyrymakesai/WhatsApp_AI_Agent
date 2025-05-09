@@ -5,7 +5,8 @@ import re
 from datetime import datetime, timedelta
 from src.utils.whatsapp import send_whatsapp_message
 import tempfile, shutil
-
+from utils.slot_parser import parse_slot
+from typing import Any
 
 from pathlib import Path
 
@@ -47,38 +48,62 @@ def save_all_bookings(bookings: dict):
     shutil.move(tmp_path, BOOKINGS_FILE)
 
 
-# ---- REPLACE the old save_individual_booking with this ----------
+BASE_DIR = Path(__file__).resolve().parents[2]
+BOOKINGS_FILE = BASE_DIR / "data" / "bookings.json"
 
 
-# ---- NEW helper (add near the other helpers) --------------------
-def slot_taken(slot: str, exclude_user: str | None = None) -> bool:
-    """Return True if any *other* user already booked `slot`."""
-    return any(
-        uid != exclude_user and info.get("time") == slot
-        for uid, info in load_bookings().items()
-    )
+def load_bookings() -> dict[str, Any]:
+    BOOKINGS_FILE.parent.mkdir(exist_ok=True, parents=True)
+    if not BOOKINGS_FILE.exists():
+        BOOKINGS_FILE.write_text("{}")
+    try:
+        return json.loads(BOOKINGS_FILE.read_text())
+    except json.JSONDecodeError:
+        return {}
+
+
+def save_all_bookings(bookings: dict[str, Any]) -> None:
+    fd, tmp = tempfile.mkstemp(dir=BOOKINGS_FILE.parent, suffix=".tmp")
+    with os.fdopen(fd, "w") as f:
+        json.dump(bookings, f, indent=2)
+    shutil.move(tmp, BOOKINGS_FILE)
+
+
+def slot_taken(
+    slot: str,
+    bookings: dict[str, Any] | None = None,
+    exclude_user: str | None = None,
+) -> bool:
+    """Return True if this slot is already booked by someone else."""
+    if bookings is None:
+        bookings = load_bookings()
+    canon = parse_slot(slot) or slot
+    for user, data in bookings.items():
+        if user == exclude_user:
+            continue
+        booked = data.get("time")
+        if not booked:
+            continue
+        if (parse_slot(booked) or booked) == canon:
+            return True
+    return False
 
 
 def save_individual_booking(
     user_number: str,
     slot: str,
-    email: str | None = None,  # ← add default
+    email: str | None = None,
 ) -> None:
-    """
-    Persist a booking unless the slot is already taken.
-
-    Raises
-    ------
-    ValueError
-        If the desired slot is occupied by another user.
-    """
-    if slot_taken(slot, exclude_user=user_number):
+    """Atomically load, check, save a new booking."""
+    bookings = load_bookings()
+    # collision check
+    if slot_taken(slot, bookings, exclude_user=user_number):
         raise ValueError("Slot already booked")
 
-    bookings = load_bookings()
+    # write the booking
     bookings[user_number] = {
         "time": slot,
-        "email": email or bookings.get(user_number, {}).get("email"),  # keep old
+        "email": email or bookings.get(user_number, {}).get("email"),
         "awaiting_selection": False,
         "reminder_sent_sms": False,
         "reminder_sent_email": False,

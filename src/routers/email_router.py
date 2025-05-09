@@ -1,43 +1,45 @@
-# src/routers/email_router.py
+from fastapi import APIRouter, Request
 import re
-from fastapi import Request
+from src.handlers.booking_handler import load_bookings, save_all_bookings
 from tools.whatsapp_snd_tool import SendWhatsappMsg
-from handlers.booking_handler import load_bookings, save_all_bookings
+
+router = APIRouter()
 
 
-async def handle_email(body: dict) -> dict:
-    """
-    body == { "user_number": str, "user_message": str }
-    """
-    user = body["user_number"]
-    msg = body["user_message"].strip()
+@router.post("/incoming/email")
+async def handle_email(request: Request):
+    payload = await request.json()
+    user_message = payload.get("message", "").strip()
+    user_number = payload.get("number", "")
     bookings = load_bookings()
 
-    if bookings.get(user, {}).get("awaiting_email"):
-        if "skip" in msg.lower():
-            bookings[user]["awaiting_email"] = False
-            save_all_bookings(bookings)
-            SendWhatsappMsg.invoke(
-                {"number": user, "message": "👍 No problem – WhatsApp reminders only."}
-            )
-            return {"status": "email skipped"}
-
-        # very basic regex
-        if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", msg):
-            bookings[user]["email"] = msg
-            bookings[user]["awaiting_email"] = False
-            save_all_bookings(bookings)
-            SendWhatsappMsg.invoke(
-                {"number": user, "message": "✅ Great! I’ll email reminders too."}
-            )
-            return {"status": "email saved"}
-
+    # skip
+    if "skip" in user_message.lower():
+        bookings[user_number]["awaiting_email"] = False
+        save_all_bookings(bookings)
         SendWhatsappMsg.invoke(
             {
-                "number": user,
-                "message": "⚠️ That doesn’t look like an email. Send a valid address or say 'skip'.",
+                "number": user_number,
+                "message": "👍 No problem – WhatsApp reminders only.",
             }
         )
-        return {"status": "awaiting valid email"}
+        return {"status": "email_skipped"}
 
-    return {"status": "not awaiting email"}
+    # naive email regex
+    if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", user_message):
+        bookings[user_number]["email"] = user_message
+        bookings[user_number]["awaiting_email"] = False
+        save_all_bookings(bookings)
+        SendWhatsappMsg.invoke(
+            {"number": user_number, "message": "✅ Great! I’ll email reminders too."}
+        )
+        return {"status": "email_saved"}
+
+    # otherwise ask again
+    SendWhatsappMsg.invoke(
+        {
+            "number": user_number,
+            "message": "⚠️ That doesn’t look like an email. Send a valid address or say 'skip'.",
+        }
+    )
+    return {"status": "email_retry"}

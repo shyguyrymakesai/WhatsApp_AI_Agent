@@ -1,5 +1,6 @@
 agent
 config
 memory
+routers
 tools
 utils

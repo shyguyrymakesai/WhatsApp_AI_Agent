@@ -1,0 +1,15 @@
+artifact_uri: file:///C:/Users/Ryan/Desktop/WhatsApp_AI_Agent/mlruns/526005919605776416/205516a703e040a09c94b7b37749a35c/artifacts
+end_time: 1746804842517
+entry_point_name: ''
+experiment_id: '526005919605776416'
+lifecycle_stage: active
+run_id: 205516a703e040a09c94b7b37749a35c
+run_name: Book a flight from New York to London on July 1
+run_uuid: 205516a703e040a09c94b7b37749a35c
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1746804829258
+status: 4
+tags: []
+user_id: Ryan

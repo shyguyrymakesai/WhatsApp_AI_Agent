@@ -1,4 +1,4 @@
-# src/memory/mcp_server.py
+# File: src/memory/mcp_server.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import os
@@ -8,11 +8,16 @@ app = FastAPI()
 
 MEMORY_FILE = "data/user_memory.json"
 
+
 # Ensure memory file exists
-if not os.path.exists(MEMORY_FILE):
-    os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
-    with open(MEMORY_FILE, "w") as f:
-        json.dump({}, f)
+def _ensure_memory_file():
+    if not os.path.exists(MEMORY_FILE):
+        os.makedirs(os.path.dirname(MEMORY_FILE), exist_ok=True)
+        with open(MEMORY_FILE, "w") as f:
+            json.dump({}, f)
+
+
+_ensure_memory_file()
 
 
 # Load memory
@@ -34,27 +39,26 @@ class MemoryPayload(BaseModel):
 
 @app.get("/memory/{user_id}")
 async def get_memory(user_id: str):
-    memory_data = load_memory()
-    return memory_data.get(user_id, {})
+    data = load_memory()
+    return data.get(user_id, {})
 
 
 @app.post("/memory/{user_id}")
 async def save_user_memory(user_id: str, payload: MemoryPayload):
-    memory_data = load_memory()
-    memory_data[user_id] = payload.memory
-    save_memory(memory_data)
+    data = load_memory()
+    data[user_id] = payload.memory
+    save_memory(data)
     return {"status": "memory saved"}
 
 
 @app.delete("/memory/{user_id}")
 async def delete_user_memory(user_id: str):
-    memory_data = load_memory()
-    if user_id in memory_data:
-        del memory_data[user_id]
-        save_memory(memory_data)
+    data = load_memory()
+    if user_id in data:
+        del data[user_id]
+        save_memory(data)
         return {"status": "memory deleted"}
-    else:
-        raise HTTPException(status_code=404, detail="User memory not found.")
+    raise HTTPException(status_code=404, detail="User memory not found.")
 
 
 if __name__ == "__main__":

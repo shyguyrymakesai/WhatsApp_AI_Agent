@@ -1,3 +1,5 @@
 {
-    "git.ignoreLimitWarning": true
+    "git.ignoreLimitWarning": true,
+      // so that imports like “from src.utils.slot_parser…” resolve
+    "python.analysis.extraPaths": ["./src"]
 }

@@ -1,4 +1,4 @@
-from handlers import reminder_handler, booking_handler, question_handler
+from src.handlers import reminder_handler, booking_handler, question_handler
 from src.utils.whatsapp import send_whatsapp_message
 
 
