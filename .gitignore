@@ -1,4 +1,4 @@
-# ────────── Python
+# ------------------------------ Python ------------------------------
 __pycache__/
 *.py[cod]
 *.so
@@ -9,12 +9,12 @@ __pycache__/
 *.mo
 *.pyd
 *.egg-info/
-dist/              # build artifacts
+dist/
 build/
-.venv/             # or venv/ ; whatever you called it
+.venv/
 *.tgz
 
-# ────────── Node / WhatsApp bot
+# ------------------------ Node / WhatsApp bot ----------------------
 node_modules/
 npm-debug.log*
 yarn.lock
@@ -22,7 +22,7 @@ pnpm-lock.yaml
 yarn-debug.log*
 yarn-error.log*
 
-# ────────── IDE / OS cruft
+# ---------------------------- IDE / OS ------------------------------
 .vscode/
 .idea/
 *.swp
@@ -30,26 +30,17 @@ yarn-error.log*
 Thumbs.db
 *~
 
-# ────────── Runtime state
-data/bookings.json          # live bookings
+# ------------------------- Runtime artefacts ------------------------
+data/
 fastapi_port.txt
-*.log
-.cache/
 *.tmp
-data/*.tmp
-
-
-# ────────── Secrets
-.env                         # environment variables
-
-# ────────── Front-end bundles / maps
-*.map
-
-data/bookings.json
-data/user_memory.json
-data/waitlist.json
-
+.cache/
+*.log
 .wwebjs_cache
 .wwebjs_auth
-data
+mlruns/
+!mlruns/.gitkeep
+
+# ----------------------------- Secrets ------------------------------
 .env
+.env.*

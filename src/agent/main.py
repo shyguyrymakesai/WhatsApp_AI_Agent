@@ -11,4 +11,6 @@ def run_agent(prompt: str) -> dict:
     """
     agent = Agent()
     tool, args = agent.think_llm(prompt)
+    if not tool:
+        tool, args = agent._fallback_tool(prompt, "no tool selected")
     return {"tool": tool, "args": args or {}}

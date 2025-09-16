@@ -1,17 +1,12 @@
 import re
-from datetime import datetime, timedelta
 from typing import Optional
 
 from langchain.tools import StructuredTool
 from pydantic import BaseModel, Field
 
-from src.handlers.booking_handler import (
-    get_booking_options,
-    save_individual_booking,
-    slot_taken,
-)
-from tools.check_availability_tool import check_availability
-from utils.slot_parser import parse_slot
+from src.handlers.booking_handler import get_booking_options, save_individual_booking
+from src.tools.check_availability_tool import check_availability
+from src.utils.slot_parser import parse_slot
 
 
 class BookingInput(BaseModel):
