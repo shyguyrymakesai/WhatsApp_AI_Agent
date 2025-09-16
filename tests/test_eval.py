@@ -10,7 +10,10 @@ sys.path.insert(
 )
 
 import pytest
-import mlflow
+
+mlflow = pytest.importorskip(
+    "mlflow", reason="mlflow is optional; install it to run evaluation tests."
+)
 from agent import run_agent  # adjust import to your agent entry-point
 
 

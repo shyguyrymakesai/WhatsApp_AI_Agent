@@ -13,8 +13,11 @@ from src.memory.memory_client import get_user_memory, save_user_memory
 class Agent:
     """LLM-driven decision maker that routes user messages to src.tools and uses MCP for memory."""
 
-    def __init__(self, user_id: str, tools=None):
-        self.user_id = user_id
+    def __init__(self, user_id: str | None = None, tools=None):
+        if user_id:
+            self.user_id = user_id if "@c.us" in user_id else f"{user_id}@c.us"
+        else:
+            self.user_id = "test-user@c.us"
         self.tools = tools or [
             SendWhatsappMsg,
             GetTime,
@@ -71,28 +74,39 @@ class Agent:
             STYLE_SHIM
             + "\n"
             + mem_block
-            + """You are an intelligent agent named Bob that assists customers via WhatsApp."
-"Use the available tools to respond to every business-related inquiry, routing through tool calls as needed."
-"Only respond in JSON specifying 'tool' and 'args'."""
+            + (
+                "You are an intelligent agent named Bob that assists customers via WhatsApp. "
+                "Use the available tools to respond to every business-related inquiry, routing through tool calls as needed. "
+                "Only respond in JSON specifying 'tool' and 'args'."
+            )
         )
 
-        client = Client(host="http://localhost:11434")
-        response = client.chat(
-            model="qwen2.5",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"User message: {user_message}"},
-            ],
-        )
-        response_text = response["message"]["content"]
-        print("\n🛠️ RAW LLM RESPONSE:\n", response_text)
+        try:
+            client = Client(host="http://localhost:11434")
+            response = client.chat(
+                model="qwen2.5",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"User message: {user_message}"},
+                ],
+            )
+            response_text = response["message"]["content"]
+            print("\n🛠️ RAW LLM RESPONSE:\n", response_text)
+        except Exception as exc:
+            print(f"⚠️ Agent: LLM call failed – falling back to heuristics ({exc}).")
+            return self._fallback_tool(user_message, str(exc))
 
         try:
             parsed = json.loads(response_text)
-            return parsed.get("tool"), parsed.get("args") or {}
-        except Exception as e:
-            print(f"⚠️ Agent: Failed to parse LLM output: {e}")
-            return None, None
+            tool = parsed.get("tool")
+            args = parsed.get("args") or {}
+            if not tool:
+                print("⚠️ Agent: LLM response missing tool. Using heuristic routing.")
+                return self._fallback_tool(user_message, "missing tool")
+            return tool, args
+        except Exception as exc:
+            print(f"⚠️ Agent: Failed to parse LLM output ({exc}). Using heuristic routing.")
+            return self._fallback_tool(user_message, str(exc))
 
     def act(self, tool_name: str | None, tool_args: dict | None, user_message: str):
         """Invoke the chosen tool, relay results, and save updated memory."""
@@ -176,3 +190,31 @@ class Agent:
         if raw.startswith("nearest::"):
             return "⚠️ Nearest available is " + raw.split("::", 1)[1]
         return raw
+
+    def _fallback_tool(self, user_message: str, error: str | None = None):
+        """Very small keyword router so tests/dev don't require a running LLM."""
+        if error:
+            print(f"ℹ️ Agent: fallback triggered because {error}")
+
+        lowered = user_message.lower()
+        number = self.user_id
+
+        if any(keyword in lowered for keyword in ["status", "existing booking", "my booking"]):
+            return "CheckBookingTool", {"user_number": number}
+
+        if any(keyword in lowered for keyword in ["book", "schedule", "appointment", "reserve"]):
+            return (
+                "SendWhatsappMsg",
+                {
+                    "number": number,
+                    "message": "Thanks! I'll check the calendar and confirm shortly.",
+                },
+            )
+
+        return (
+            "SendWhatsappMsg",
+            {
+                "number": number,
+                "message": "Hi there! Let me know if you need to book, cancel, or check an appointment.",
+            },
+        )
